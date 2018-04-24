@@ -12,6 +12,7 @@ import numpy as np
 import time
 import os
 from six.moves import cPickle
+from tqdm import tqdm
 
 import opts
 import models
@@ -80,6 +81,9 @@ def train(opt):
     if vars(opt).get('start_from', None) is not None:
         optimizer.load_state_dict(torch.load(os.path.join(opt.start_from, 'optimizer.pth')))
 
+    progress_epoch = tqdm(range(opt.max_epochs), ascii=True, unit='epoch')
+    progress_iteration = tqdm(ascii=True)
+
     while True:
         if update_lr_flag:
                 # Assign the learning rate
@@ -96,35 +100,35 @@ def train(opt):
                 opt.ss_prob = min(opt.scheduled_sampling_increase_prob  * frac, opt.scheduled_sampling_max_prob)
                 model.ss_prob = opt.ss_prob
             update_lr_flag = False
-                
-        start = time.time()
+
         # Load data from train split (0)
         data = loader.get_batch('train')
-        print('Read data:', time.time() - start)
 
-        torch.cuda.synchronize()
-        start = time.time()
+        #torch.cuda.synchronize()
 
-        tmp = [data['fc_feats'], data['att_feats'], data['labels'], data['masks']]
-        tmp = [Variable(torch.from_numpy(_), requires_grad=False).cuda() for _ in tmp]
-        fc_feats, att_feats, labels, masks = tmp
-        
+        #tmp = [data['fc_feats'], data['att_feats'], data['labels'], data['masks']]
+        #tmp = [Variable(torch.from_numpy(_), requires_grad=False).cuda() for _ in tmp]
+
+        fc_feats, att_feats, labels, masks = \
+            [Variable(torch.from_numpy(data[_]).cuda(), requires_grad=False) for _ in \
+                ['fc_feats', 'att_feats', 'labels', 'masks']]
         optimizer.zero_grad()
         loss = crit(model(fc_feats, att_feats, labels), labels[:,1:], masks[:,1:])
         loss.backward()
         utils.clip_gradient(optimizer, opt.grad_clip)
         optimizer.step()
         train_loss = loss.data[0]
-        torch.cuda.synchronize()
-        end = time.time()
-        print("iter {} (epoch {}), train_loss = {:.3f}, time/batch = {:.3f}" \
-            .format(iteration, epoch, train_loss, end - start))
+        #torch.cuda.synchronize()
 
         # Update the iteration and epoch
+        progress_iteration.set_description("Loss: {:.6f}".format(train_loss))
         iteration += 1
+        progress_iteration.update(1)
         if data['bounds']['wrapped']:
             epoch += 1
             update_lr_flag = True
+            progress_epoch.update(1)
+            progress_iteration = tqdm(ascii=True)
 
         # Write the training loss summary
         if (iteration % opt.losses_log_every == 0):
@@ -139,7 +143,7 @@ def train(opt):
             ss_prob_history[iteration] = model.ss_prob
 
         # make evaluation on validation set, and save model
-        if (iteration % opt.save_checkpoint_every == 0):
+        if (False and iteration % opt.save_checkpoint_every == 0):
             # eval model
             eval_kwargs = {'split': 'val',
                             'dataset': opt.input_json}
@@ -161,7 +165,7 @@ def train(opt):
                 current_score = - val_loss
 
             best_flag = False
-            if True: # if true
+            if False: # if true
                 if best_val_score is None or current_score > best_val_score:
                     best_val_score = current_score
                     best_flag = True

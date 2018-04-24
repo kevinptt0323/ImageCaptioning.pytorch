@@ -81,7 +81,7 @@ class OldModel(CaptionModel):
             xt = self.embed(it)
 
             output, state = self.core(xt, fc_feats, att_feats, state)
-            output = F.log_softmax(self.logit(self.dropout(output)))
+            output = F.log_softmax(self.logit(self.dropout(output)), dim=0)
             outputs.append(output)
 
         return torch.cat([_.unsqueeze(1) for _ in outputs], 1)
@@ -91,7 +91,7 @@ class OldModel(CaptionModel):
         xt = self.embed(it)
 
         output, state = self.core(xt, tmp_fc_feats, tmp_att_feats, state)
-        logprobs = F.log_softmax(self.logit(self.dropout(output)))
+        logprobs = F.log_softmax(self.logit(self.dropout(output)), dim=0)
 
         return logprobs, state
 
@@ -121,7 +121,7 @@ class OldModel(CaptionModel):
                     xt = self.embed(Variable(it, requires_grad=False))
 
                 output, state = self.core(xt, tmp_fc_feats, tmp_att_feats, state)
-                logprobs = F.log_softmax(self.logit(self.dropout(output)))
+                logprobs = F.log_softmax(self.logit(self.dropout(output)), dim=0)
 
             self.done_beams[k] = self.beam_search(state, logprobs, tmp_fc_feats, tmp_att_feats, opt=opt)
             seq[:, k] = self.done_beams[k][0]['seq'] # the first beam has highest cumulative score
@@ -172,7 +172,7 @@ class OldModel(CaptionModel):
                 seqLogprobs.append(sampleLogprobs.view(-1))
 
             output, state = self.core(xt, fc_feats, att_feats, state)
-            logprobs = F.log_softmax(self.logit(self.dropout(output)))
+            logprobs = F.log_softmax(self.logit(self.dropout(output)), dim=0)
 
         return torch.cat([_.unsqueeze(1) for _ in seq], 1), torch.cat([_.unsqueeze(1) for _ in seqLogprobs], 1)
 
@@ -220,7 +220,7 @@ class ShowAttendTellCore(nn.Module):
             att_h = att_h.expand_as(att)                        # batch * att_size
             dot = att_h + att                                   # batch * att_size
         
-        weight = F.softmax(dot)
+        weight = F.softmax(dot, dim=0)
         att_feats_ = att_feats.view(-1, att_size, self.att_feat_size) # batch * att_size * att_feat_size
         att_res = torch.bmm(weight.unsqueeze(1), att_feats_).squeeze(1) # batch * att_feat_size
 
