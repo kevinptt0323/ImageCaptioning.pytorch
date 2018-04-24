@@ -31,6 +31,7 @@ import os
 import json
 import argparse
 import h5py
+from tqdm import tqdm
 from random import shuffle, seed
 
 import numpy as np
@@ -38,14 +39,12 @@ import torch
 from torch.autograd import Variable
 import skimage.io
 
-from torchvision import transforms as trn
-preprocess = trn.Compose([
-        #trn.ToTensor(),
-        trn.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-])
-
 from misc.resnet_utils import myResnet
 import misc.resnet as resnet
+
+from torchvision import transforms as trn
+
+normalize = trn.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
 
 
 def main(params):
@@ -70,31 +69,23 @@ def main(params):
 
   with h5py.File(os.path.join(dir_fc, 'feats_fc.h5')) as file_fc,\
        h5py.File(os.path.join(dir_att, 'feats_att.h5')) as file_att:
-    for i, img in enumerate(imgs):
-      # load the image
+    for i, img in enumerate(tqdm(imgs)):
       I = skimage.io.imread(os.path.join(params['images_root'], img['filepath'], img['filename']))
-      # handle grayscale input images
+
       if len(I.shape) == 2:
-        I = I[:,:,np.newaxis]
-        I = np.concatenate((I,I,I), axis=2)
+        I = skimage.color.gray2rgb(I)
 
-      I = I.astype('float32')/255.0
       I = torch.from_numpy(I.transpose([2,0,1])).cuda()
-      I = Variable(preprocess(I), volatile=True)
+      I = I.float() / 255.0
+
+      I = normalize(I)
+      I = Variable(I, volatile=True)
+
       tmp_fc, tmp_att = my_resnet(I, params['att_size'])
+
       # write to hdf5
-
-      d_set_fc = file_fc.create_dataset(str(img['cocoid']), 
-        (2048,), dtype="float")
-      d_set_att = file_att.create_dataset(str(img['cocoid']), 
-        (params['att_size'], params['att_size'], 2048), dtype="float")
-
-      d_set_fc[...] = tmp_fc.data.cpu().float().numpy()
-      d_set_att[...] = tmp_att.data.cpu().float().numpy()
-      if i % 1000 == 0:
-        print('processing %d/%d (%.2f%% done)' % (i, N, i*100.0 / N))
-    file_fc.close()
-    file_att.close()
+      file_fc.create_dataset(str(img['cocoid']), data=tmp_fc.data.cpu().numpy(), dtype=np.float32)
+      file_att.create_dataset(str(img['cocoid']), data=tmp_att.data.cpu().numpy(), dtype=np.float32)
 
 
 if __name__ == "__main__":
